@@ -1,5 +1,35 @@
 """What drives a comparison: choose a window, read both sides, classify every pair.
 
+## Running one
+
+Nothing schedules this. Until something does, a run is a Django shell away, on a pod or locally.
+Both reads are read-only, so this cannot change what either stack does.
+
+    from datetime import UTC, datetime, timedelta
+
+    from products.alerts.backend.comparison.orchestration import run_comparison
+    from products.alerts.backend.comparison.platform_history import teams_with_configurations
+    from products.alerts.backend.facade.contracts import SourceKind
+    from products.logs.backend.alert_comparison import LogsCorrespondence
+
+    until = datetime.now(UTC)
+    run = run_comparison(
+        correspondence=LogsCorrespondence(),
+        team_ids=teams_with_configurations(SourceKind.LOGS),
+        since=until - timedelta(hours=24),
+        until=until,
+    )
+    print(run.checks, run.agreement_rate, run.by_agreement, run.by_coverage, run.by_divergence)
+
+Read the three breakdowns together or the headline misleads. `by_coverage` says how much of the
+window the source could answer for: a large `unknown` share means the backfill is incomplete, not
+that the stacks disagree. `by_divergence` splits the disagreements, and `real` is the only class
+worth chasing, with the caveat below. `run.divergences` holds up to `MAX_SAMPLED_DIVERGENCES`
+of them, each naming its alert and both states, which is where to start reading.
+
+Widen the window past 90 days and the platform's rows have expired; `ComparisonWindowTooLarge`
+means narrow it rather than retry.
+
 ## How a pair is chosen
 
 The join is one-directional, so there is no set-matching problem to solve. `read_platform_checks`
@@ -30,6 +60,9 @@ No tolerance is applied here, on purpose. Narrowing the comparison to instants w
 have settled would discard comparisons to buy precision, and the rate being bought is unknown. A
 run reports its classes separately so the first one measures how much `REAL` is really phase skew,
 and the tolerance is chosen against that number rather than ahead of it.
+
+So do not read the first run's `real` count as the number of genuine disagreements. Read it as an
+upper bound, and spend the first run working out what share of it is two cadences out of phase.
 
 ## What a run cannot see
 
