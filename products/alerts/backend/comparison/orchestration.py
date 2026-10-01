@@ -114,6 +114,9 @@ def run_comparison(
     One team at a time, because the platform read is per team. A team the platform cannot be read
     for is recorded and the sweep continues, so one oversized window does not cost the rest.
     """
+    # A repeated team would otherwise count its checks twice, and leave `teams_read` claiming a
+    # team the sweep only failed to read.
+    teams = list(dict.fromkeys(team_ids))
     agreements: Counter[str] = Counter()
     divergence_classes: Counter[str] = Counter()
     coverages: Counter[str] = Counter()
@@ -121,7 +124,7 @@ def run_comparison(
     sampled: list[Comparison] = []
     checks = 0
 
-    for team_id in team_ids:
+    for team_id in teams:
         try:
             platform_checks = read_platform_checks(
                 team_id=team_id, source=correspondence.source, since=since, until=until
@@ -152,7 +155,7 @@ def run_comparison(
         source=correspondence.source,
         since=since,
         until=until,
-        teams_read=len(team_ids) - len(unread),
+        teams_read=len(teams) - len(unread),
         checks=checks,
         by_agreement=dict(agreements),
         by_divergence=dict(divergence_classes),

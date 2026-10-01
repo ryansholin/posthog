@@ -92,6 +92,22 @@ class TestRunComparison(TestCase):
         assert run.teams_read == 1
         assert run.checks == 1
 
+    def test_a_team_named_twice_is_swept_once(self) -> None:
+        # A sweep built from a query missing a DISTINCT would otherwise count a team's checks
+        # twice, into both halves of the rate.
+        checks = [_check("firing")]
+
+        with patch(READER, autospec=True, return_value=checks):
+            run = run_comparison(
+                correspondence=_Correspondence({checks[0].ref: "firing"}),
+                team_ids=[1, 1],
+                since=SINCE,
+                until=UNTIL,
+            )
+
+        assert run.checks == 1
+        assert run.teams_read == 1
+
     def test_the_rate_measures_agreement_rather_than_how_much_the_source_could_answer(self) -> None:
         # Counting UNCOMPARABLE against agreement would make the headline number track backfill
         # completeness instead, which is the trap this run reports `by_coverage` separately to avoid.
