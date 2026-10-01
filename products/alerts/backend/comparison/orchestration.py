@@ -1,8 +1,5 @@
 """What drives a comparison: choose a window, read both sides, classify every pair.
 
-Unimplemented. This module exists to hold the decisions the implementation has to make, so the
-next person starts from them rather than rediscovering them.
-
 ## How a pair is chosen
 
 The join is one-directional, so there is no set-matching problem to solve. `read_platform_checks`
@@ -13,7 +10,7 @@ comparisons, not an alignment problem.
 
 Two joins, both exact. `legacy_configuration_id` names the alert. `occurred_at` names the moment.
 
-## The decision this forces
+## The decision this leaves open
 
 Neither join handles phase skew between the two cadences. The only defense is `SourceCoverage`
 `BEHIND`, which asks whether the source had *seen* the data, by testing its own last check against
@@ -29,48 +26,148 @@ The N-of-M window is a second route to the same false positive, independent of s
 stack builds its recent-breach history from its own rows, so two stacks reading the same data can
 sit at different points in their own counts.
 
-Three ways to answer it, and the choice belongs before anyone reads an agreement rate:
-
-1. Compare only where both stacks have settled, skipping a platform check that falls within one
-   source check-interval of a source transition.
-2. Widen `BEHIND` to "the source has had a check since this data", testing its last check against
-   the window end plus its check interval.
-3. Take the noise in the first run, measure it, then choose. Preferred: the first two both discard
-   comparisons to buy precision, and the real rate is unknown.
+No tolerance is applied here, on purpose. Narrowing the comparison to instants where both stacks
+have settled would discard comparisons to buy precision, and the rate being bought is unknown. A
+run reports its classes separately so the first one measures how much `REAL` is really phase skew,
+and the tolerance is chosen against that number rather than ahead of it.
 
 ## What a run cannot see
 
 Every comparison starts from a platform row, so a check the source made and the platform never did
-is invisible. The harness measures what the platform decided and whether the source agreed, not
-whether the two made the same checks.
+is invisible. A run measures what the platform decided and whether the source agreed, not whether
+the two made the same checks.
 
-## What else the implementation owes
+## Why the correspondence is a parameter
 
-- A sweep is per team, because `read_platform_checks` takes one `team_id`.
-- Coverage measures the backfill as much as agreement: an alert the backfill never copied has no
-  `legacy_configuration_id` and reads as `UNKNOWN`. Report it apart from the agreement rate, or the
-  rate flatters itself.
-- A correspondence must answer every ref it is given. The contract says so and nothing enforces it;
-  this is the first caller that holds every correspondence, so the check belongs here.
-- The ratchet in `test_divergence.py` iterates a hand-written list of correspondences, so a source
-  that implements one and is not listed gets no coverage. A registry here is what closes it.
+`products.alerts` may not import `products.logs`, so a registry of correspondences cannot live
+here. The caller supplies one, which also keeps a run from classifying one source's verdicts under
+another source's declarations.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections import Counter
+from collections.abc import Mapping, Sequence
+from dataclasses import field
 from datetime import datetime
 
-from products.alerts.backend.comparison.contracts import SourceCorrespondence
-from products.alerts.backend.comparison.divergence import Comparison
+import structlog
+
+from posthog.dataclasses import frozen
+
+from products.alerts.backend.comparison.contracts import CheckRef, SourceCorrespondence, SourceCoverage, SourceVerdict
+from products.alerts.backend.comparison.divergence import Agreement, Comparison, compare
+from products.alerts.backend.comparison.platform_history import ComparisonWindowTooLarge, read_platform_checks
+from products.alerts.backend.facade.contracts import SourceKind
+
+logger = structlog.get_logger(__name__)
+
+# A run reports a rate and a sample, not every row. Past this the sample stops growing and the
+# counts carry on, because the counts are what the rate is built from.
+MAX_SAMPLED_DIVERGENCES = 200
+
+
+@frozen
+class ComparisonRun:
+    """What one sweep found.
+
+    The three breakdowns answer different questions and a reader needs all of them. `by_divergence`
+    is the output the exercise exists for. `by_coverage` says how much of the window the source
+    could answer for at all, which measures how complete the backfill is as much as it measures
+    agreement. `teams_unread` says where the sweep saw nothing, which is neither.
+    """
+
+    source: SourceKind
+    since: datetime
+    until: datetime
+    teams_read: int
+    checks: int
+    by_agreement: dict[str, int] = field(default_factory=dict)
+    by_divergence: dict[str, int] = field(default_factory=dict)
+    by_coverage: dict[str, int] = field(default_factory=dict)
+    teams_unread: dict[int, str] = field(default_factory=dict)
+    divergences: tuple[Comparison, ...] = ()
+
+    @property
+    def agreement_rate(self) -> float | None:
+        """Agreed over what could be compared at all.
+
+        `UNCOMPARABLE` is excluded rather than counted against agreement, because a source that
+        cannot answer has not disagreed. None when nothing was comparable, which is a different
+        answer from zero.
+        """
+        comparable = self.by_agreement.get(Agreement.AGREED, 0) + self.by_agreement.get(Agreement.DIVERGED, 0)
+        if not comparable:
+            return None
+        return self.by_agreement.get(Agreement.AGREED, 0) / comparable
 
 
 def run_comparison(
     *,
-    team_ids: Sequence[int],
     correspondence: SourceCorrespondence,
+    team_ids: Sequence[int],
     since: datetime,
     until: datetime,
-) -> Sequence[Comparison]:
-    """Every platform check in the window, set against what the source held at the same moment."""
-    raise NotImplementedError("the comparison harness has no driver yet; see this module's docstring")
+) -> ComparisonRun:
+    """Every platform check in the window, set against what the source held at the same moment.
+
+    One team at a time, because the platform read is per team. A team the platform cannot be read
+    for is recorded and the sweep continues, so one oversized window does not cost the rest.
+    """
+    agreements: Counter[str] = Counter()
+    divergence_classes: Counter[str] = Counter()
+    coverages: Counter[str] = Counter()
+    unread: dict[int, str] = {}
+    sampled: list[Comparison] = []
+    checks = 0
+
+    for team_id in team_ids:
+        try:
+            platform_checks = read_platform_checks(
+                team_id=team_id, source=correspondence.source, since=since, until=until
+            )
+        except ComparisonWindowTooLarge as error:
+            unread[team_id] = str(error)
+            logger.warning(
+                "Comparison skipped a team whose window is too large",
+                team_id=team_id,
+                source=correspondence.source.value,
+            )
+            continue
+        if not platform_checks:
+            continue
+
+        verdicts = correspondence.verdicts_for(platform_checks)
+        for check in platform_checks:
+            comparison = compare(check, _verdict_for(verdicts, check.ref), correspondence=correspondence)
+            checks += 1
+            agreements[comparison.agreement.value] += 1
+            coverages[comparison.coverage.value] += 1
+            if comparison.divergence is not None:
+                divergence_classes[comparison.divergence.value] += 1
+                if len(sampled) < MAX_SAMPLED_DIVERGENCES:
+                    sampled.append(comparison)
+
+    return ComparisonRun(
+        source=correspondence.source,
+        since=since,
+        until=until,
+        teams_read=len(team_ids) - len(unread),
+        checks=checks,
+        by_agreement=dict(agreements),
+        by_divergence=dict(divergence_classes),
+        by_coverage=dict(coverages),
+        teams_unread=unread,
+        divergences=tuple(sampled),
+    )
+
+
+def _verdict_for(verdicts: Mapping[CheckRef, SourceVerdict], ref: CheckRef) -> SourceVerdict:
+    """The source's answer for one check, or an unanswered one.
+
+    The contract obliges a correspondence to answer every ref it was given. Nothing enforced that
+    until there was a caller holding both sides, and a missing ref must not read as agreement.
+    """
+    return verdicts.get(ref) or SourceVerdict(
+        coverage=SourceCoverage.UNKNOWN, state=None, detail="the source returned no verdict for this check"
+    )
