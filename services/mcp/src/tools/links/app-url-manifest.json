@@ -1064,11 +1064,6 @@
         "params": [],
         "scope": "project"
     },
-    "liveDebugger": {
-        "template": "/live-debugger",
-        "params": [],
-        "scope": "project"
-    },
     "login": {
         "template": "/login",
         "params": [],

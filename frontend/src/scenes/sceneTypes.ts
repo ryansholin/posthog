@@ -107,7 +107,6 @@ export enum Scene {
     Views = 'Views',
     Link = 'Link',
     Links = 'Links',
-    LiveDebugger = 'LiveDebugger',
     Activity = 'Activity',
     LiveEvents = 'LiveEvents',
     Login = 'Login',

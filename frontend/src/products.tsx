@@ -212,7 +212,6 @@ export const productRoutes: Record<string, [string, string]> = {
     '/legal/new/:type': ['LegalDocumentNew', 'legalDocumentNew'],
     '/links': ['Links', 'links'],
     '/link/:id': ['Link', 'link'],
-    '/live-debugger': ['LiveDebugger', 'liveDebugger'],
     '/logs': ['Logs', 'logs'],
     '/logs/alerts/:id': ['LogsAlertDetail', 'logsAlertDetail'],
     '/logs/alerts/:id/notifications/:hogFunctionId': ['LogsAlertNotificationDetail', 'logsAlertNotificationDetail'],
@@ -902,11 +901,6 @@ export const productConfiguration: Record<string, any> = {
         iconType: 'link',
     },
     Link: { name: 'Link', projectBased: true, activityScope: 'Link' },
-    LiveDebugger: {
-        name: 'Live debugger',
-        projectBased: true,
-        description: 'Set breakpoints in your running code and inspect the state captured when they hit.',
-    },
     Logs: {
         projectBased: true,
         name: 'Logs',
@@ -1563,7 +1557,6 @@ export const productUrls = {
     legalDocumentNew: (type: 'BAA' | 'DPA'): string => `/legal/new/${type.toLowerCase()}`,
     links: (): string => '/links',
     link: (id: string): string => `/link/${id}`,
-    liveDebugger: (): string => '/live-debugger',
     logs: (): string => '/logs',
     logsAlertDetail: (id: string, tab?: string): string =>
         tab ? `/logs/alerts/${id}?tab=${tab}` : `/logs/alerts/${id}`,
@@ -1874,14 +1867,6 @@ export const fileSystemTypes = {
         filterKey: 'link',
         flag: FEATURE_FLAGS.LINKS,
     },
-    live_debugger: {
-        name: 'Live Debugger',
-        iconType: 'live_debugger',
-        href: () => urls.liveDebugger(),
-        iconColor: ['var(--color-product-live-debugger-light)'],
-        filterKey: 'live_debugger',
-        flag: FEATURE_FLAGS.LIVE_DEBUGGER,
-    },
     notebook: {
         name: 'Notebook',
         iconType: 'notebook',
@@ -2138,7 +2123,6 @@ export type ProductTreePath =
     | 'Identity matching'
     | 'Inbox'
     | 'Links'
-    | 'Live Debugger'
     | 'LLM analytics'
     | 'Logs'
     | 'Marketing analytics'
@@ -2593,20 +2577,6 @@ export const getTreeItemsProducts = (): FileSystemImport[] => [
         tags: ['alpha'],
         sceneKey: 'Links',
         sceneKeys: ['Links', 'Link'],
-    },
-    {
-        path: 'Live Debugger',
-        displayLabel: 'Live debugger',
-        intents: [ProductKey.LIVE_DEBUGGER],
-        sceneKey: 'LiveDebugger',
-        category: ProductItemCategory.UNRELEASED,
-        type: 'live_debugger',
-        href: urls.liveDebugger(),
-        flag: FEATURE_FLAGS.LIVE_DEBUGGER,
-        iconType: 'live_debugger',
-        tags: ['alpha'],
-        iconColor: ['var(--color-product-live-debugger-light)', 'var(--color-product-live-debugger-dark)'],
-        sceneKeys: ['LiveDebugger'],
     },
     {
         path: 'Logs',
