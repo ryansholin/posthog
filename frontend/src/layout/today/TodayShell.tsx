@@ -3,7 +3,8 @@ import './TodayShell.scss'
 import { useActions, useValues } from 'kea'
 import { useEffect, useRef } from 'react'
 
-import { Heading, ToastProvider } from '@posthog/quill'
+import { IconChevronLeft } from '@posthog/icons'
+import { Button, Heading, ToastProvider, Tooltip, TooltipContent, TooltipTrigger } from '@posthog/quill'
 
 import 'scenes/project-homepage/today/Today.scss'
 import { Resizer } from 'lib/components/Resizer/Resizer'
@@ -15,21 +16,36 @@ import { NewSpaceDialog } from 'products/tasks/frontend/spaces/NewSpaceDialog'
 
 import { TodayLibrarySidebar } from './TodayLibrarySidebar'
 import { TodayMobileHeader } from './TodayMobileHeader'
+import { TodayMoreSidebar } from './TodayMoreSidebar'
 import { TodayPreviewCardProvider } from './TodayPreviewCardProvider'
 import { TodayRail } from './TodayRail'
-import { TODAY_RAIL_WIDTH, TODAY_SIDEBAR_CLOSE_THRESHOLD, clampSidebarWidth, todayShellLogic } from './todayShellLogic'
+import {
+    TODAY_MORE_PANES,
+    TODAY_RAIL_WIDTH,
+    TODAY_SIDEBAR_CLOSE_THRESHOLD,
+    clampSidebarWidth,
+    todayShellLogic,
+} from './todayShellLogic'
 import { TodaySidebarFooter } from './TodaySidebarFooter'
 import { TodaySpacesSidebar } from './TodaySpacesSidebar'
 import { TodayTabBar } from './TodayTabBar'
 import { TodayToolsSidebar } from './TodayToolsSidebar'
 import { TodayViewsSidebar } from './TodayViewsSidebar'
 
-const PANE_LABELS = { home: 'Today', spaces: 'Spaces', views: 'Views', library: 'Library', tools: 'Tools' }
+const PANE_LABELS = {
+    home: 'Today',
+    spaces: 'Spaces',
+    views: 'Views',
+    library: 'Library',
+    tools: 'Tools',
+    more: 'More',
+}
 
 /** The left navigation under the Today layout: the rail, then the sidebar for the pane the rail has open. */
 export function TodayShell({ className }: { className?: string }): JSX.Element {
     const { activePane, mobileLayout, mobileNavLayout, sidebarVisible, sidebarWidth } = useValues(todayShellLogic)
-    const { setMobileSidebarOpen, setSidebarOpen, setSidebarWidth, toggleSidebar } = useActions(todayShellLogic)
+    const { pickPane, setMobileSidebarOpen, setSidebarOpen, setSidebarWidth, toggleSidebar } =
+        useActions(todayShellLogic)
     const sidebarRef = useRef<HTMLDivElement | null>(null)
     const drawerRef = useRef<HTMLElement | null>(null)
     const returnFocusRef = useRef<HTMLElement | null>(null)
@@ -78,6 +94,8 @@ export function TodayShell({ className }: { className?: string }): JSX.Element {
                 <TodayViewsSidebar />
             ) : activePane === 'library' ? (
                 <TodayLibrarySidebar />
+            ) : activePane === 'more' ? (
+                <TodayMoreSidebar />
             ) : (
                 <TodayToolsSidebar />
             )}
@@ -100,7 +118,26 @@ export function TodayShell({ className }: { className?: string }): JSX.Element {
                     {!sidebarVisible && <TodayMobileHeader />}
                     <aside {...drawerProps} className="TodayShell__sidebar TodayShell__page outline-none">
                         <div className="TodayShell__pageHeader" data-quill>
-                            <Heading render={<h1 />} size="xl">
+                            {TODAY_MORE_PANES.includes(activePane) && (
+                                <Tooltip>
+                                    <TooltipTrigger
+                                        delay={0}
+                                        render={
+                                            <Button
+                                                size="icon-lg"
+                                                className="rounded-full -ml-3"
+                                                aria-label="Back to More"
+                                                data-attr="today-more-back"
+                                                onClick={() => pickPane('more')}
+                                            />
+                                        }
+                                    >
+                                        <IconChevronLeft />
+                                    </TooltipTrigger>
+                                    <TooltipContent>Back to More</TooltipContent>
+                                </Tooltip>
+                            )}
+                            <Heading render={<h1 />} size="xl" className="m-0 leading-tight">
                                 {PANE_LABELS[activePane]}
                             </Heading>
                         </div>

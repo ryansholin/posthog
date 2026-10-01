@@ -140,7 +140,11 @@ body:has(.TodayAppLayout--mobileNav) .Toastify__toast-container {
 }
 
 .TodayShell__pageHeader {
-    padding: 18px 20px 0;
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    min-height: 58px;
+    padding: 10px 20px 0;
     color: var(--today-ink);
 }
 

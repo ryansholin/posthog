@@ -5,8 +5,8 @@ import { Button, Tooltip, TooltipContent, TooltipTrigger } from '@posthog/quill'
 
 import { commandLogic } from 'lib/components/Command/commandLogic'
 
-import { TODAY_RAIL_ITEMS } from './todayRailItems'
-import { todayShellLogic } from './todayShellLogic'
+import { TODAY_TAB_BAR_ITEMS } from './todayRailItems'
+import { TODAY_MORE_PANES, todayShellLogic } from './todayShellLogic'
 
 /** The rail on phone-width windows: the panes in a bar across the bottom, with search beside them. */
 export function TodayTabBar(): JSX.Element {
@@ -17,8 +17,8 @@ export function TodayTabBar(): JSX.Element {
     return (
         <div className="TodayTabBar" data-quill>
             <nav aria-label="Main" className="TodayTabBar__tabs rounded-full">
-                {TODAY_RAIL_ITEMS.map(({ pane, label, icon }) => {
-                    const active = activePane === pane
+                {TODAY_TAB_BAR_ITEMS.map(({ pane, label, icon }) => {
+                    const active = activePane === pane || (pane === 'more' && TODAY_MORE_PANES.includes(activePane))
                     return (
                         <button
                             key={pane}

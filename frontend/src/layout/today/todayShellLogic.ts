@@ -15,7 +15,10 @@ import { navigationLogic } from '~/layout/navigation/navigationLogic'
 
 import { toolHrefForPath } from './todayToolsLogic'
 
-export type TodayRailPane = 'home' | 'spaces' | 'views' | 'library' | 'tools'
+/** `more` exists only on the phone tab bar, where it holds the panes that do not fit. */
+export type TodayRailPane = 'home' | 'spaces' | 'views' | 'library' | 'tools' | 'more'
+
+export const TODAY_MORE_PANES: TodayRailPane[] = ['library', 'tools']
 
 export const TODAY_RAIL_WIDTH = 56
 /** Below this window width the rail moves to a tab bar at the bottom, and panes and pages fill the screen. */
@@ -154,7 +157,11 @@ export interface todayShellLogicActions {
 export interface todayShellLogicMeta {
     __keaTypeGenInternalSelectorTypes: {
         routePane: (location: { hash: string; pathname: string; search: string }) => TodayRailPane | null
-        activePane: (pickedPane: TodayRailPane | null, routePane: TodayRailPane | null) => TodayRailPane
+        activePane: (
+            pickedPane: TodayRailPane | null,
+            routePane: TodayRailPane | null,
+            mobileNavLayout: boolean
+        ) => TodayRailPane
         leftNavWidth: (
             sidebarOpen: boolean,
             sidebarWidth: number,
@@ -233,9 +240,13 @@ export const todayShellLogic = kea<todayShellLogicType>([
             (location: { pathname: string }): TodayRailPane | null => railPaneForPath(location.pathname),
         ],
         activePane: [
-            (s) => [s.pickedPane, s.routePane],
-            (pickedPane: TodayRailPane | null, routePane: TodayRailPane | null): TodayRailPane =>
-                pickedPane ?? routePane ?? 'home',
+            (s) => [s.pickedPane, s.routePane, s.mobileNavLayout],
+            (
+                pickedPane: TodayRailPane | null,
+                routePane: TodayRailPane | null,
+                mobileNavLayout: boolean
+            ): TodayRailPane =>
+                pickedPane === 'more' && !mobileNavLayout ? (routePane ?? 'home') : (pickedPane ?? routePane ?? 'home'),
         ],
         leftNavWidth: [
             (s) => [s.sidebarOpen, s.sidebarWidth, s.mobileLayout, s.mobileNavLayout],

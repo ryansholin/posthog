@@ -832,17 +832,28 @@ export const PhoneWindowPage: Story = {
     },
 }
 
+async function clickPhoneTab(canvasElement: HTMLElement, pane: string): Promise<void> {
+    const tab = await waitFor(() => {
+        const element = canvasElement.querySelector<HTMLElement>(`[data-attr="today-rail-${pane}"]`)
+        if (!element) {
+            throw new Error('The tab bar has not rendered yet')
+        }
+        return element
+    })
+    await userEvent.click(tab)
+}
+
 export const PhoneWindowPane: Story = {
     parameters: { testOptions: { viewport: { width: 390, height: 844 } } },
     play: async ({ canvasElement }) => {
-        const spacesTab = await waitFor(() => {
-            const tab = canvasElement.querySelector<HTMLElement>('[data-attr="today-rail-spaces"]')
-            if (!tab) {
-                throw new Error('The tab bar has not rendered yet')
-            }
-            return tab
-        })
-        await userEvent.click(spacesTab)
+        await clickPhoneTab(canvasElement, 'spaces')
+    },
+}
+
+export const PhoneWindowMore: Story = {
+    parameters: { testOptions: { viewport: { width: 390, height: 844 } } },
+    play: async ({ canvasElement }) => {
+        await clickPhoneTab(canvasElement, 'more')
     },
 }
 
