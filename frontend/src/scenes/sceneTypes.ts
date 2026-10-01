@@ -105,8 +105,6 @@ export enum Scene {
     LegalDocumentNew = 'LegalDocumentNew',
     Library = 'Library',
     Views = 'Views',
-    Link = 'Link',
-    Links = 'Links',
     Activity = 'Activity',
     LiveEvents = 'LiveEvents',
     Login = 'Login',

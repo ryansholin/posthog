@@ -257,7 +257,6 @@ rules:
                               |KnowledgeSource
                               |PlaygroundChat
                               |PlaygroundTurn
-                              |Link
                               |LiveDebuggerBreakpoint
                               |LogsAlertConfiguration
                               |LogsExclusionRule
@@ -700,7 +699,6 @@ rules:
                         |KnowledgeSource
                         |PlaygroundChat
                         |PlaygroundTurn
-                        |Link
                         |LiveDebuggerBreakpoint
                         |Loop
                         |LoopFire
