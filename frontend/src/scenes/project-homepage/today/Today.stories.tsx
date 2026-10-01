@@ -825,6 +825,27 @@ export const NarrowWindowWithSidebar: Story = {
     },
 }
 
+export const PhoneWindowPage: Story = {
+    parameters: {
+        pageUrl: urls.taskSpace('space-checkout'),
+        testOptions: { viewport: { width: 390, height: 844 } },
+    },
+}
+
+export const PhoneWindowPane: Story = {
+    parameters: { testOptions: { viewport: { width: 390, height: 844 } } },
+    play: async ({ canvasElement }) => {
+        const spacesTab = await waitFor(() => {
+            const tab = canvasElement.querySelector<HTMLElement>('[data-attr="today-rail-spaces"]')
+            if (!tab) {
+                throw new Error('The tab bar has not rendered yet')
+            }
+            return tab
+        })
+        await userEvent.click(spacesTab)
+    },
+}
+
 // The card opens on hover, which a static story can't hold, so these render its contents in the same frame.
 const noop = (): void => {}
 

@@ -63,9 +63,139 @@
     }
 }
 
+.TodayAppLayout--mobileNav {
+    --today-mobile-header-height: 52px;
+    --today-tab-bar-height: calc(76px + env(safe-area-inset-bottom));
+
+    padding-top: var(--today-mobile-header-height);
+    padding-bottom: var(--today-tab-bar-height);
+}
+
+.TodayShell--mobileNav {
+    display: contents;
+}
+
+// The toast container mounts outside the app layout, so it cannot read the tab bar height variable.
+body:has(.TodayAppLayout--mobileNav) .Toastify__toast-container {
+    bottom: calc(76px + env(safe-area-inset-bottom));
+}
+
+.TodayMobileHeader {
+    position: fixed;
+    top: 0;
+    right: 0;
+    left: 0;
+    z-index: var(--z-layout-navbar);
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    height: var(--today-mobile-header-height);
+    padding: 0 12px 0 8px;
+    color: var(--today-ink);
+    background: var(--today-paper);
+}
+
+.TodayShell__page {
+    position: fixed;
+    inset: 0 0 var(--today-tab-bar-height);
+    z-index: var(--z-layout-navbar);
+    visibility: hidden;
+    background: var(--today-paper);
+    opacity: 0;
+    transition:
+        transform 280ms var(--today-ease),
+        opacity 200ms var(--today-ease),
+        visibility 280ms;
+    transform: translateX(-12px);
+
+    &[data-open='true'] {
+        visibility: visible;
+        opacity: 1;
+        transform: none;
+    }
+
+    .TodayPane {
+        padding-top: 8px;
+    }
+}
+
+.TodayShell__pageHeader {
+    padding: 18px 20px 0;
+    color: var(--today-ink);
+}
+
+.TodayTabBar {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: var(--z-layout-navbar);
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    height: var(--today-tab-bar-height);
+    padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+    background: var(--today-paper);
+}
+
+.TodayTabBar__tabs {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 60px;
+    padding: 4px;
+    background: var(--today-card);
+    border: 1px solid var(--today-line);
+    box-shadow: var(--today-card-shadow);
+}
+
+.TodayTabBar__tab {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    gap: 2px;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--today-muted);
+
+    &[data-active='true'] {
+        color: var(--today-ink);
+        background: var(--today-soft);
+    }
+
+    &:focus-visible {
+        outline: 2px solid var(--today-focus-border);
+        outline-offset: -2px;
+    }
+}
+
+.TodayTabBar__icon svg {
+    width: 22px;
+    height: 22px;
+}
+
+.TodayTabBar__search {
+    flex: 0 0 auto;
+    width: 60px;
+    height: 60px;
+    color: var(--today-ink);
+    background: var(--today-card);
+    border: 1px solid var(--today-line);
+    box-shadow: var(--today-card-shadow);
+
+    svg {
+        width: 22px;
+        height: 22px;
+    }
+}
+
 @media (prefers-reduced-motion: reduce) {
     .TodayShell__scrim,
-    .TodayShell__drawer {
+    .TodayShell__drawer,
+    .TodayShell__page {
         transition: none;
     }
 }

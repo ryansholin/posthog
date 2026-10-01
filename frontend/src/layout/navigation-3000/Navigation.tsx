@@ -54,8 +54,10 @@ export function Navigation({
         leftNavWidth: todayLeftNavWidth,
         todayRailEnabled: todayRail,
         sidebarVisible: todaySidebarVisible,
+        mobileNavLayout: todayMobileNavLayout,
     } = useValues(todayShellLogic)
     const todayDrawerOpen = todayRail && mobileLayout && todaySidebarVisible
+    const todayMobileNav = todayRail && todayMobileNavLayout
 
     // SceneMenuBar (when enabled) replaces ProjectNotice's role of conveying project-level
     // context above scene content, so we hide the notice for users on the new menu bar.
@@ -151,8 +153,9 @@ export function Navigation({
             </a>
             <div
                 className={cn('app-layout bg-surface-tertiary', {
-                    'app-layout--mobile': mobileLayout && !todayRail,
+                    'app-layout--mobile': (mobileLayout && !todayRail) || todayMobileNav,
                     TodayAppLayout: todayRail,
+                    'TodayAppLayout--mobileNav': todayMobileNav,
                 })}
                 style={
                     {
@@ -187,7 +190,7 @@ export function Navigation({
                         className={cn(
                             '@container/main-content-container main-content-container flex overflow-hidden lg:rounded border-t lg:border border-primary relative lg:mr-1 lg:mb-1 lg:mt-1',
                             {
-                                'rounded border mr-1 mb-1 mt-1': todayRail,
+                                'rounded border mr-1 mb-1 mt-1': todayRail && !todayMobileNav,
                                 'rounded-r-none': sidePanelOpen,
                             }
                         )}

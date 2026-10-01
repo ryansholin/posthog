@@ -1,7 +1,8 @@
-import { MakeLogicType, actions, connect, kea, listeners, path, reducers, selectors } from 'kea'
+import { MakeLogicType, actions, afterMount, connect, kea, listeners, path, reducers, selectors } from 'kea'
 import { router } from 'kea-router'
 import type { LocationChangedPayload } from 'kea-router/lib/types'
 import { subscriptions } from 'kea-subscriptions'
+import { windowValues } from 'kea-window-values'
 import posthog from 'posthog-js'
 
 import { FEATURE_FLAGS } from 'lib/constants'
@@ -17,6 +18,8 @@ import { toolHrefForPath } from './todayToolsLogic'
 export type TodayRailPane = 'home' | 'spaces' | 'views' | 'library' | 'tools'
 
 export const TODAY_RAIL_WIDTH = 56
+/** Below this window width the rail moves to a tab bar at the bottom, and panes and pages fill the screen. */
+export const TODAY_MOBILE_NAV_MAX_WIDTH = 768
 export const TODAY_SIDEBAR_DEFAULT_WIDTH: number = 312
 export const TODAY_SIDEBAR_MIN_WIDTH = 240
 export const TODAY_SIDEBAR_MAX_WIDTH = 480
@@ -32,6 +35,30 @@ export function clampSidebarWidth(width: number | null): number {
 
 function isUnder(path: string, root: string): boolean {
     return path === root || path.startsWith(`${root}/`)
+}
+
+// Pages are tracked on every layout, so the list needs a bound on long desktop sessions.
+const MOBILE_PAGE_LIMIT = 50
+
+export interface TodayMobilePage {
+    pathname: string
+    url: string
+}
+
+/** The pages the phone layout can go back through. A new path adds a page, and a change on the same path updates it. */
+export function nextMobilePages(
+    pages: TodayMobilePage[],
+    method: LocationChangedPayload['method'],
+    page: TodayMobilePage
+): TodayMobilePage[] {
+    const current = pages[pages.length - 1]
+    if (method === 'PUSH' && current?.pathname !== page.pathname) {
+        return [...pages, page].slice(-MOBILE_PAGE_LIMIT)
+    }
+    if (method === 'POP' && pages[pages.length - 2]?.pathname === page.pathname) {
+        return [...pages.slice(0, -2), page]
+    }
+    return [...pages.slice(0, -1), page]
 }
 
 /** The pane a route belongs to, or null for pages that keep whichever pane was open. */
@@ -66,6 +93,8 @@ export interface todayShellLogicValues {
     mobileLayout: boolean // navigationLogic
     activePane: TodayRailPane
     leftNavWidth: number
+    mobileNavLayout: boolean
+    mobilePages: TodayMobilePage[]
     mobileSidebarOpen: boolean
     pickedPane: TodayRailPane | null
     routePane: TodayRailPane | null
@@ -98,8 +127,14 @@ export interface todayShellLogicActions {
         searchParams: Record<string, any>
         url: string
     } // router
+    goBackOnMobile: () => {
+        value: true
+    }
     pickPane: (pane: TodayRailPane) => {
         pane: TodayRailPane
+    }
+    setMobilePages: (pages: TodayMobilePage[]) => {
+        pages: TodayMobilePage[]
     }
     setMobileSidebarOpen: (open: boolean) => {
         open: boolean
@@ -120,7 +155,12 @@ export interface todayShellLogicMeta {
     __keaTypeGenInternalSelectorTypes: {
         routePane: (location: { hash: string; pathname: string; search: string }) => TodayRailPane | null
         activePane: (pickedPane: TodayRailPane | null, routePane: TodayRailPane | null) => TodayRailPane
-        leftNavWidth: (sidebarOpen: boolean, sidebarWidth: number, mobileLayout: boolean) => number
+        leftNavWidth: (
+            sidebarOpen: boolean,
+            sidebarWidth: number,
+            mobileLayout: boolean,
+            mobileNavLayout: boolean
+        ) => number
         sidebarVisible: (mobileLayout: boolean, mobileSidebarOpen: boolean, sidebarOpen: boolean) => boolean
         todayRailEnabled: (featureFlags: FeatureFlagsSet) => boolean
     }
@@ -141,11 +181,16 @@ export const todayShellLogic = kea<todayShellLogicType>([
     })),
     actions({
         pickPane: (pane: TodayRailPane) => ({ pane }),
+        goBackOnMobile: true,
+        setMobilePages: (pages: TodayMobilePage[]) => ({ pages }),
         setMobileSidebarOpen: (open: boolean) => ({ open }),
         setSidebarOpen: (open: boolean) => ({ open }),
         setSidebarWidth: (width: number) => ({ width }),
         toggleSidebar: true,
     }),
+    windowValues(() => ({
+        mobileNavLayout: (window: Window) => window.innerWidth < TODAY_MOBILE_NAV_MAX_WIDTH,
+    })),
     reducers({
         // The last pane picked on the rail, or reached through a route that belongs to one, stays open on other pages.
         pickedPane: [
@@ -169,6 +214,16 @@ export const todayShellLogic = kea<todayShellLogicType>([
                 locationChanged: () => false,
             },
         ],
+        // Opening a pane clears the pages, so the back button on the first page returns to the pane.
+        mobilePages: [
+            [] as TodayMobilePage[],
+            {
+                setMobilePages: (_, { pages }) => pages,
+                setMobileSidebarOpen: (state, { open }) => (open ? [] : state),
+                locationChanged: (state, { method, pathname, search, hash }) =>
+                    nextMobilePages(state, method, { pathname, url: `${pathname}${search}${hash}` }),
+            },
+        ],
         // The resizer persists the width itself. This copy lets the app layout size the main column from it.
         sidebarWidth: [TODAY_SIDEBAR_DEFAULT_WIDTH, { setSidebarWidth: (_, { width }) => clampSidebarWidth(width) }],
     }),
@@ -183,9 +238,9 @@ export const todayShellLogic = kea<todayShellLogicType>([
                 pickedPane ?? routePane ?? 'home',
         ],
         leftNavWidth: [
-            (s) => [s.sidebarOpen, s.sidebarWidth, s.mobileLayout],
-            (sidebarOpen: boolean, sidebarWidth: number, mobileLayout: boolean): number =>
-                TODAY_RAIL_WIDTH + (sidebarOpen && !mobileLayout ? sidebarWidth : 0),
+            (s) => [s.sidebarOpen, s.sidebarWidth, s.mobileLayout, s.mobileNavLayout],
+            (sidebarOpen: boolean, sidebarWidth: number, mobileLayout: boolean, mobileNavLayout: boolean): number =>
+                mobileNavLayout ? 0 : TODAY_RAIL_WIDTH + (sidebarOpen && !mobileLayout ? sidebarWidth : 0),
         ],
         sidebarVisible: [
             (s) => [s.mobileLayout, s.mobileSidebarOpen, s.sidebarOpen],
@@ -223,9 +278,18 @@ export const todayShellLogic = kea<todayShellLogicType>([
                 return () => window.removeEventListener('keydown', onKeyDown)
             }, 'drawerEscape')
         },
+        goBackOnMobile: () => {
+            const previous = values.mobilePages[values.mobilePages.length - 2]
+            if (!previous) {
+                actions.setMobileSidebarOpen(true)
+                return
+            }
+            actions.setMobilePages(values.mobilePages.slice(0, -1))
+            router.actions.replace(previous.url)
+        },
         pickPane: ({ pane }) => {
-            // pinned: analytics event name and property. Renaming them breaks dashboards.
-            posthog.capture('today rail pane picked', { pane })
+            // pinned: analytics event name and properties. Renaming them breaks dashboards.
+            posthog.capture('today rail pane picked', { pane, mobile_nav: values.mobileNavLayout })
             if (pane === 'home' && values.routePane !== 'home') {
                 router.actions.push(urls.projectHomepage())
             }
@@ -242,4 +306,8 @@ export const todayShellLogic = kea<todayShellLogicType>([
             }
         },
     })),
+    afterMount(({ actions }) => {
+        const { pathname, search, hash } = router.values.location
+        actions.setMobilePages([{ pathname, url: `${pathname}${search}${hash}` }])
+    }),
 ])

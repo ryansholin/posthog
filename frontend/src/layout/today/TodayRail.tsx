@@ -1,16 +1,6 @@
 import { useActions, useValues } from 'kea'
 
-import {
-    IconBook,
-    IconChat,
-    IconGridMasonry,
-    IconHome,
-    IconLogomark,
-    IconSearch,
-    IconSidebarClose,
-    IconSidebarOpen,
-    IconWrench,
-} from '@posthog/icons'
+import { IconLogomark, IconSearch, IconSidebarClose, IconSidebarOpen } from '@posthog/icons'
 
 import { NewAccountMenu } from 'lib/components/Account/NewAccountMenu'
 import { pendingInvitesLogic } from 'lib/components/Account/pendingInvitesLogic'
@@ -21,15 +11,8 @@ import { ButtonPrimitive } from 'lib/ui/Button/ButtonPrimitives'
 import { cn } from 'lib/utils/css-classes'
 import { organizationLogic } from 'scenes/organizationLogic'
 
-import { TODAY_RAIL_WIDTH, TodayRailPane, todayShellLogic } from './todayShellLogic'
-
-const RAIL_ITEMS: { pane: TodayRailPane; label: string; icon: JSX.Element }[] = [
-    { pane: 'home', label: 'Home', icon: <IconHome /> },
-    { pane: 'spaces', label: 'Spaces', icon: <IconChat /> },
-    { pane: 'views', label: 'Views', icon: <IconGridMasonry /> },
-    { pane: 'library', label: 'Library', icon: <IconBook /> },
-    { pane: 'tools', label: 'Tools', icon: <IconWrench /> },
-]
+import { TODAY_RAIL_ITEMS } from './todayRailItems'
+import { TODAY_RAIL_WIDTH, todayShellLogic } from './todayShellLogic'
 
 export function TodayRail(): JSX.Element {
     const { activePane, sidebarVisible } = useValues(todayShellLogic)
@@ -48,7 +31,7 @@ export function TodayRail(): JSX.Element {
             <div className="flex items-center justify-center size-9 mb-2 text-primary" aria-hidden>
                 <IconLogomark className="size-6" />
             </div>
-            {RAIL_ITEMS.map(({ pane, label, icon }) => {
+            {TODAY_RAIL_ITEMS.map(({ pane, label, icon }) => {
                 const active = activePane === pane
                 return (
                     <ButtonPrimitive

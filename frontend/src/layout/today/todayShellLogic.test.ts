@@ -97,4 +97,33 @@ describe('todayShellLogic', () => {
             Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth })
         }
     })
+
+    it('on phone widths, opens a pane as a page and goes back through pages to the pane', () => {
+        const originalWidth = window.innerWidth
+        Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 })
+        try {
+            const logic = todayShellLogic()
+            logic.mount()
+            expect(logic.values.leftNavWidth).toBe(0)
+
+            logic.actions.pickPane('tools')
+            expect(logic.values.sidebarVisible).toBe(true)
+
+            router.actions.push('/project/1/sql')
+            router.actions.push('/project/1/sql?open_query=abc')
+            router.actions.push('/project/1/insights/abc', { tab: 'x' })
+            expect(logic.values.sidebarVisible).toBe(false)
+
+            logic.actions.goBackOnMobile()
+            expect(router.values.location.pathname).toBe('/project/1/sql')
+            expect(router.values.location.search).toBe('?open_query=abc')
+            expect(logic.values.sidebarVisible).toBe(false)
+
+            logic.actions.goBackOnMobile()
+            expect(logic.values.sidebarVisible).toBe(true)
+            expect(logic.values.activePane).toBe('tools')
+        } finally {
+            Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth })
+        }
+    })
 })

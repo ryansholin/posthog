@@ -3,7 +3,7 @@ import './TodayShell.scss'
 import { useActions, useValues } from 'kea'
 import { useEffect, useRef } from 'react'
 
-import { ToastProvider } from '@posthog/quill'
+import { Heading, ToastProvider } from '@posthog/quill'
 
 import 'scenes/project-homepage/today/Today.scss'
 import { Resizer } from 'lib/components/Resizer/Resizer'
@@ -14,11 +14,13 @@ import { TodayHomeSidebar } from 'scenes/project-homepage/today/TodayHomeSidebar
 import { NewSpaceDialog } from 'products/tasks/frontend/spaces/NewSpaceDialog'
 
 import { TodayLibrarySidebar } from './TodayLibrarySidebar'
+import { TodayMobileHeader } from './TodayMobileHeader'
 import { TodayPreviewCardProvider } from './TodayPreviewCardProvider'
 import { TodayRail } from './TodayRail'
 import { TODAY_RAIL_WIDTH, TODAY_SIDEBAR_CLOSE_THRESHOLD, clampSidebarWidth, todayShellLogic } from './todayShellLogic'
 import { TodaySidebarFooter } from './TodaySidebarFooter'
 import { TodaySpacesSidebar } from './TodaySpacesSidebar'
+import { TodayTabBar } from './TodayTabBar'
 import { TodayToolsSidebar } from './TodayToolsSidebar'
 import { TodayViewsSidebar } from './TodayViewsSidebar'
 
@@ -26,7 +28,7 @@ const PANE_LABELS = { home: 'Today', spaces: 'Spaces', views: 'Views', library: 
 
 /** The left navigation under the Today layout: the rail, then the sidebar for the pane the rail has open. */
 export function TodayShell({ className }: { className?: string }): JSX.Element {
-    const { activePane, mobileLayout, sidebarVisible, sidebarWidth } = useValues(todayShellLogic)
+    const { activePane, mobileLayout, mobileNavLayout, sidebarVisible, sidebarWidth } = useValues(todayShellLogic)
     const { setMobileSidebarOpen, setSidebarOpen, setSidebarWidth, toggleSidebar } = useActions(todayShellLogic)
     const sidebarRef = useRef<HTMLDivElement | null>(null)
     const drawerRef = useRef<HTMLElement | null>(null)
@@ -82,55 +84,76 @@ export function TodayShell({ className }: { className?: string }): JSX.Element {
         </div>
     )
 
+    const drawerProps = {
+        ref: drawerRef,
+        tabIndex: -1,
+        'aria-label': PANE_LABELS[activePane],
+        'aria-hidden': !sidebarVisible,
+        'data-open': sidebarVisible,
+        ...(sidebarVisible ? {} : { inert: '' }),
+    }
+
     return (
         <ToastProvider>
-            <div
-                className={cn('Today TodayShell', className)}
-                // eslint-disable-next-line react/forbid-dom-props
-                style={{ '--today-rail-width': `${TODAY_RAIL_WIDTH}px` } as React.CSSProperties}
-            >
-                <TodayRail />
-                {mobileLayout ? (
-                    <>
-                        <div
-                            className="TodayShell__scrim"
-                            data-open={sidebarVisible}
-                            aria-hidden
-                            onClick={() => setMobileSidebarOpen(false)}
-                        />
-                        <aside
-                            ref={drawerRef}
-                            tabIndex={-1}
-                            className="TodayShell__sidebar TodayShell__drawer outline-none"
-                            data-open={sidebarVisible}
-                            aria-label={PANE_LABELS[activePane]}
-                            aria-hidden={!sidebarVisible}
-                            {...(sidebarVisible ? {} : { inert: '' })}
-                            // eslint-disable-next-line react/forbid-dom-props
-                            style={{ width: sidebarWidth }}
-                        >
-                            {pane}
-                            <TodaySidebarFooter />
-                        </aside>
-                    </>
-                ) : (
-                    sidebarVisible && (
-                        <aside
-                            ref={sidebarRef}
-                            className="TodayShell__sidebar relative"
-                            aria-label={PANE_LABELS[activePane]}
-                            // eslint-disable-next-line react/forbid-dom-props
-                            style={{ width: sidebarWidth }}
-                        >
-                            {pane}
-                            <TodaySidebarFooter />
-                            <Resizer {...resizerLogicProps} className="z-2" offset={0} />
-                        </aside>
-                    )
-                )}
-                {/* Mounted here so the sidebar and the spaces page open the same dialog. */}
-                <NewSpaceDialog />
-            </div>
+            {mobileNavLayout ? (
+                <div className={cn('Today TodayShell TodayShell--mobileNav', className)}>
+                    {!sidebarVisible && <TodayMobileHeader />}
+                    <aside {...drawerProps} className="TodayShell__sidebar TodayShell__page outline-none">
+                        <div className="TodayShell__pageHeader" data-quill>
+                            <Heading render={<h1 />} size="xl">
+                                {PANE_LABELS[activePane]}
+                            </Heading>
+                        </div>
+                        {pane}
+                        <TodaySidebarFooter />
+                    </aside>
+                    <TodayTabBar />
+                    <NewSpaceDialog />
+                </div>
+            ) : (
+                <div
+                    className={cn('Today TodayShell', className)}
+                    // eslint-disable-next-line react/forbid-dom-props
+                    style={{ '--today-rail-width': `${TODAY_RAIL_WIDTH}px` } as React.CSSProperties}
+                >
+                    <TodayRail />
+                    {mobileLayout ? (
+                        <>
+                            <div
+                                className="TodayShell__scrim"
+                                data-open={sidebarVisible}
+                                aria-hidden
+                                onClick={() => setMobileSidebarOpen(false)}
+                            />
+                            <aside
+                                {...drawerProps}
+                                className="TodayShell__sidebar TodayShell__drawer outline-none"
+                                // eslint-disable-next-line react/forbid-dom-props
+                                style={{ width: sidebarWidth }}
+                            >
+                                {pane}
+                                <TodaySidebarFooter />
+                            </aside>
+                        </>
+                    ) : (
+                        sidebarVisible && (
+                            <aside
+                                ref={sidebarRef}
+                                className="TodayShell__sidebar relative"
+                                aria-label={PANE_LABELS[activePane]}
+                                // eslint-disable-next-line react/forbid-dom-props
+                                style={{ width: sidebarWidth }}
+                            >
+                                {pane}
+                                <TodaySidebarFooter />
+                                <Resizer {...resizerLogicProps} className="z-2" offset={0} />
+                            </aside>
+                        )
+                    )}
+                    {/* Mounted here so the sidebar and the spaces page open the same dialog. */}
+                    <NewSpaceDialog />
+                </div>
+            )}
         </ToastProvider>
     )
 }
