@@ -2,7 +2,7 @@ import { useActions, useValues } from 'kea'
 import { useRef, useState } from 'react'
 
 import { IconSparkles } from '@posthog/icons'
-import { LemonButton } from '@posthog/lemon-ui'
+import { Button, Tooltip, TooltipContent, TooltipTrigger } from '@posthog/quill'
 
 import { Composer } from 'products/posthog_ai/frontend/api/primitives'
 import {
@@ -65,19 +65,26 @@ export function TodayReportPrompts({ report, reportUrl }: { report: SignalReport
     return (
         <section className="TodayPrompts" aria-label="Ask about this report">
             <div className="Today__label">Ask about this report</div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2" data-quill>
                 {prompts.map((prompt) => (
-                    <LemonButton
-                        key={prompt}
-                        type="secondary"
-                        size="small"
-                        icon={<IconSparkles />}
-                        onClick={() => pickPrompt(prompt)}
-                        disabledReason={loading ? 'A session is starting.' : undefined}
-                        data-attr="today-report-prompt"
-                    >
-                        {prompt}
-                    </LemonButton>
+                    <Tooltip key={prompt}>
+                        <TooltipTrigger
+                            render={
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-auto min-h-7 whitespace-normal text-left"
+                                    onClick={() => pickPrompt(prompt)}
+                                    disabled={loading}
+                                    data-attr="today-report-prompt"
+                                />
+                            }
+                        >
+                            <IconSparkles />
+                            {prompt}
+                        </TooltipTrigger>
+                        {loading && <TooltipContent>A session is starting.</TooltipContent>}
+                    </Tooltip>
                 ))}
             </div>
             <Composer.Root

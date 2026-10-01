@@ -191,6 +191,7 @@ export function Navigation({
                             '@container/main-content-container main-content-container flex overflow-hidden lg:rounded border-t lg:border border-primary relative lg:mr-1 lg:mb-1 lg:mt-1',
                             {
                                 'rounded border mr-1 mb-1 mt-1': todayRail && !todayMobileNav,
+                                'border-t-0': todayMobileNav,
                                 'rounded-r-none': sidePanelOpen,
                             }
                         )}

@@ -1,8 +1,9 @@
 import { useActions, useValues } from 'kea'
 
 import { IconExternal } from '@posthog/icons'
-import { LemonButton, LemonSkeleton, LemonTag } from '@posthog/lemon-ui'
+import { Badge, Button, Skeleton, Tooltip, TooltipContent, TooltipTrigger } from '@posthog/quill'
 
+import { LinkPrimitive } from 'lib/lemon-ui/Link'
 import { urls } from 'scenes/urls'
 
 import { ReportChart } from 'products/signals/frontend/inbox/components/detail/ReportChart'
@@ -32,25 +33,30 @@ export function TodayReportPage({ reportId }: { reportId: string }): JSX.Element
                 <div className="TodayReport__body">
                     <p>It may have been deleted, or the request failed. Try again, or go back to today’s briefing.</p>
                 </div>
-                <div className="flex flex-wrap gap-2 mt-6">
-                    <LemonButton
-                        type="primary"
+                <div className="flex flex-wrap gap-2 mt-6" data-quill>
+                    <Button
+                        variant="primary"
                         onClick={() => loadFullReport()}
                         loading={fullReportLoading}
                         data-attr="today-report-retry"
                     >
                         Try again
-                    </LemonButton>
-                    <LemonButton type="secondary" to={urls.projectHomepage()} data-attr="today-report-missing-home">
+                    </Button>
+                    <Button
+                        variant="outline"
+                        nativeButton={false}
+                        render={<LinkPrimitive to={urls.projectHomepage()} />}
+                        data-attr="today-report-missing-home"
+                    >
                         Back to Home
-                    </LemonButton>
+                    </Button>
                 </div>
             </div>
         ) : (
-            <div className="TodayReport Today__page flex flex-col gap-4">
-                <LemonSkeleton className="h-4 w-48" />
-                <LemonSkeleton className="h-10 w-3/4" />
-                <LemonSkeleton className="h-24" />
+            <div className="TodayReport Today__page flex flex-col gap-4" data-quill>
+                <Skeleton className="h-4 w-48" />
+                <Skeleton className="h-10 w-3/4" />
+                <Skeleton className="h-24" />
             </div>
         )
     }
@@ -68,32 +74,60 @@ export function TodayReportPage({ reportId }: { reportId: string }): JSX.Element
                         <TodayIcon icon={reportIcon(currentReport)} />
                     </span>
                     <span>{reportMeta(currentReport)}</span>
-                    {currentReport.priority && <LemonTag type="muted">{currentReport.priority}</LemonTag>}
+                    {currentReport.priority && (
+                        <span data-quill>
+                            <Badge>{currentReport.priority}</Badge>
+                        </span>
+                    )}
                 </div>
                 <h1 className="TodayReport__heading">{reportTitle(currentReport)}</h1>
-                <div className="flex flex-wrap gap-2 mt-4">
+                <div className="flex flex-wrap gap-2 mt-4" data-quill>
                     {currentReport.implementation_pr_url && (
-                        <LemonButton
-                            type="primary"
-                            size="small"
-                            to={currentReport.implementation_pr_url}
-                            targetBlank
-                            sideIcon={<IconExternal />}
-                            disabledReason={sampleDisabledReason}
-                            data-attr="today-report-pull-request"
-                        >
-                            Review the pull request
-                        </LemonButton>
+                        <Tooltip>
+                            <TooltipTrigger
+                                render={
+                                    <Button
+                                        variant="primary"
+                                        disabled={!!sampleDisabledReason}
+                                        nativeButton={!!sampleDisabledReason}
+                                        render={
+                                            sampleDisabledReason ? undefined : (
+                                                <LinkPrimitive
+                                                    to={currentReport.implementation_pr_url}
+                                                    target="_blank"
+                                                />
+                                            )
+                                        }
+                                        data-attr="today-report-pull-request"
+                                    />
+                                }
+                            >
+                                Review the pull request
+                                <IconExternal />
+                            </TooltipTrigger>
+                            {sampleDisabledReason && <TooltipContent>{sampleDisabledReason}</TooltipContent>}
+                        </Tooltip>
                     )}
-                    <LemonButton
-                        type="secondary"
-                        size="small"
-                        to={urls.inboxReport('reports', currentReport.id)}
-                        disabledReason={sampleDisabledReason}
-                        data-attr="today-report-open-inbox"
-                    >
-                        Open in Inbox
-                    </LemonButton>
+                    <Tooltip>
+                        <TooltipTrigger
+                            render={
+                                <Button
+                                    variant="outline"
+                                    disabled={!!sampleDisabledReason}
+                                    nativeButton={!!sampleDisabledReason}
+                                    render={
+                                        sampleDisabledReason ? undefined : (
+                                            <LinkPrimitive to={urls.inboxReport('reports', currentReport.id)} />
+                                        )
+                                    }
+                                    data-attr="today-report-open-inbox"
+                                />
+                            }
+                        >
+                            Open in Inbox
+                        </TooltipTrigger>
+                        {sampleDisabledReason && <TooltipContent>{sampleDisabledReason}</TooltipContent>}
+                    </Tooltip>
                 </div>
                 <ReportChartsContext.Provider value={chartsById}>
                     <div className="TodayReport__body">

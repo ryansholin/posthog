@@ -93,11 +93,31 @@ body:has(.TodayAppLayout--mobileNav) .Toastify__toast-container {
     padding: 0 12px 0 8px;
     color: var(--today-ink);
     background: var(--today-paper);
+    border-bottom: 1px solid transparent;
+    transition: border-color 200ms var(--today-ease);
+
+    &[data-scrolled='true'] {
+        border-bottom-color: var(--today-line);
+    }
+}
+
+.TodayMobileHeader__title {
+    opacity: 0;
+    transition:
+        opacity 200ms var(--today-ease),
+        transform 200ms var(--today-ease);
+    transform: translateY(4px);
+
+    .TodayMobileHeader[data-scrolled='true'] & {
+        opacity: 1;
+        transform: none;
+    }
 }
 
 .TodayShell__page {
     position: fixed;
     inset: 0 0 var(--today-tab-bar-height);
+    height: auto;
     z-index: var(--z-layout-navbar);
     visibility: hidden;
     background: var(--today-paper);
@@ -195,7 +215,9 @@ body:has(.TodayAppLayout--mobileNav) .Toastify__toast-container {
 @media (prefers-reduced-motion: reduce) {
     .TodayShell__scrim,
     .TodayShell__drawer,
-    .TodayShell__page {
+    .TodayShell__page,
+    .TodayMobileHeader,
+    .TodayMobileHeader__title {
         transition: none;
     }
 }
