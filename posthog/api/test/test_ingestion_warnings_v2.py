@@ -1,4 +1,5 @@
 import json
+from datetime import UTC, datetime, timedelta
 
 import time_machine
 from posthog.test.base import APIBaseTest, ClickhouseTestMixin
@@ -15,6 +16,11 @@ INSERT INTO {TABLE_NAME} (team_id, source, type, details, timestamp, _timestamp,
 SELECT %(team_id)s, %(source)s, %(type)s, %(details)s, %(timestamp)s, now(), 0, 0
 """
 
+# Fixture dates follow the real clock because the table TTL runs on ClickHouse time, which time_machine does not freeze
+NOW = datetime.now(UTC).replace(hour=12, minute=0, second=0, microsecond=0)
+TODAY = NOW.strftime("%Y-%m-%d")
+THREE_DAYS_AGO = (NOW - timedelta(days=3)).strftime("%Y-%m-%d")
+
 
 def create_warning(team_id: int, type: str, timestamp: str, details: dict, source: str = "plugin-server") -> None:
     sync_execute(
@@ -29,11 +35,11 @@ def create_warning(team_id: int, type: str, timestamp: str, details: dict, sourc
     )
 
 
-@time_machine.travel("2026-07-07T12:00:00.000Z", tick=False)
+@time_machine.travel(NOW, tick=False)
 class TestIngestionWarningsV2API(ClickhouseTestMixin, APIBaseTest):
     def setUp(self):
         super().setUp()
-        for hour_timestamp in ["2026-07-07 09:00:00", "2026-07-07 09:30:00", "2026-07-07 10:00:00"]:
+        for hour_timestamp in [f"{TODAY} 09:00:00", f"{TODAY} 09:30:00", f"{TODAY} 10:00:00"]:
             create_warning(
                 team_id=self.team.id,
                 type="message_size_too_large",
@@ -49,7 +55,7 @@ class TestIngestionWarningsV2API(ClickhouseTestMixin, APIBaseTest):
         create_warning(
             team_id=self.team.id,
             type="cannot_merge_already_identified",
-            timestamp="2026-07-07 11:00:00",
+            timestamp=f"{TODAY} 11:00:00",
             details={
                 "category": "merge",
                 "severity": "warning",
@@ -60,7 +66,7 @@ class TestIngestionWarningsV2API(ClickhouseTestMixin, APIBaseTest):
         create_warning(
             team_id=self.team.id,
             type="message_size_too_large",
-            timestamp="2026-07-04 10:00:00",
+            timestamp=f"{THREE_DAYS_AGO} 10:00:00",
             details={"category": "size", "severity": "error", "distinctId": "old-user"},
         )
         # Another team's warning must never leak
@@ -68,7 +74,7 @@ class TestIngestionWarningsV2API(ClickhouseTestMixin, APIBaseTest):
         create_warning(
             team_id=other_team.id,
             type="message_size_too_large",
-            timestamp="2026-07-07 10:00:00",
+            timestamp=f"{TODAY} 10:00:00",
             details={"category": "size", "severity": "error", "distinctId": "other-team-user"},
         )
 
@@ -88,7 +94,7 @@ class TestIngestionWarningsV2API(ClickhouseTestMixin, APIBaseTest):
         size_warnings = results[0]
         assert size_warnings["category"] == "size"
         assert size_warnings["severity"] == "error"
-        assert size_warnings["last_seen"].startswith("2026-07-07T10:00:00")
+        assert size_warnings["last_seen"].startswith(f"{TODAY}T10:00:00")
 
         sample_timestamps = [sample["timestamp"] for sample in size_warnings["samples"]]
         assert sample_timestamps == sorted(sample_timestamps, reverse=True)
@@ -117,7 +123,7 @@ class TestIngestionWarningsV2API(ClickhouseTestMixin, APIBaseTest):
         create_warning(
             team_id=self.team.id,
             type=warning_type,
-            timestamp="2026-07-07 11:30:00",
+            timestamp=f"{TODAY} 11:30:00",
             details={"category": "event", "severity": "error", **extra_details},
             source="capture",
         )
@@ -149,7 +155,7 @@ class TestIngestionWarningsV2API(ClickhouseTestMixin, APIBaseTest):
         assert results[0]["count"] == 4
 
         # Explicit ISO bounds narrow down to a single warning
-        _, results = self._list(since="2026-07-07T10:30:00Z", until="2026-07-07T11:30:00Z")
+        _, results = self._list(since=f"{TODAY}T10:30:00Z", until=f"{TODAY}T11:30:00Z")
         assert [(r["type"], r["count"]) for r in results] == [("cannot_merge_already_identified", 1)]
 
     @parameterized.expand(
@@ -169,14 +175,14 @@ class TestIngestionWarningsV2API(ClickhouseTestMixin, APIBaseTest):
             create_warning(
                 team_id=self.team.id,
                 type="merge_race_condition",
-                timestamp=f"2026-07-07 11:{minute:02d}:00",
+                timestamp=f"{TODAY} 11:{minute:02d}:00",
                 details={"category": "merge", "severity": "error"},
             )
 
         _, results = self._list(type="merge_race_condition")
         assert results[0]["count"] == 7
         assert len(results[0]["samples"]) == 5
-        assert results[0]["samples"][0]["timestamp"].startswith("2026-07-07T11:06:00")
+        assert results[0]["samples"][0]["timestamp"].startswith(f"{TODAY}T11:06:00")
 
         _, results = self._list(type="merge_race_condition", samples=2)
         assert len(results[0]["samples"]) == 2
@@ -184,7 +190,7 @@ class TestIngestionWarningsV2API(ClickhouseTestMixin, APIBaseTest):
     @parameterized.expand(
         [
             ({"limit": 0},),
-            ({"since": "2026-07-07T11:00:00Z", "until": "2026-07-07T10:00:00Z"},),
+            ({"since": f"{TODAY}T11:00:00Z", "until": f"{TODAY}T10:00:00Z"},),
             ({"severity": "critical"},),
         ]
     )
