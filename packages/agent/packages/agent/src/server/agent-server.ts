@@ -640,6 +640,7 @@ export class AgentServer {
   private codexTokenClient: CodexSubscriptionTokenClient | null = null;
   private claudeTokenClient: ClaudeSubscriptionTokenClient | null = null;
   private claudeTokenRejected = false;
+  private claudeRejectionReport: Promise<void> | null = null;
   private readonly credentialRelay = new CredentialRelay({
     emitEvent: (event) => this.broadcastEvent(event),
   });
@@ -1373,7 +1374,12 @@ export class AgentServer {
     const runToken = this.config.claudeRunToken;
     if (!runToken) return;
     this.claudeTokenRejected = true;
-    void this.claudeSubscriptionTokens(runToken).reportRejected(token);
+    this.claudeRejectionReport =
+      this.claudeSubscriptionTokens(runToken).reportRejected(token);
+  }
+
+  private async settleClaudeRejectionReport(): Promise<void> {
+    await this.claudeRejectionReport;
   }
 
   private async reportSubscriptionTokenMissing(
@@ -2744,6 +2750,7 @@ export class AgentServer {
 
   private async runOwnedTurn<T>(operation: () => Promise<T>): Promise<T> {
     this.activeOwnedTurnCount += 1;
+    this.claudeTokenRejected = false;
     try {
       return await operation();
     } finally {
@@ -2990,6 +2997,7 @@ export class AgentServer {
       isUpstreamFailure || claudeTokenRejected
         ? displayMessage
         : cause || displayMessage;
+    await this.settleClaudeRejectionReport();
     await this.signalTaskComplete(payload, "error", persistedMessage, {
       errorCategory: classification,
     });
@@ -3200,6 +3208,7 @@ export class AgentServer {
         await this.relayAgentResponse(payload, undefined, turnTraceId);
       }
 
+      await this.settleClaudeRejectionReport();
       await this.finalizeRunTelemetry(payload);
     } catch (error) {
       this.logger.error("Failed to send initial task message", error);
@@ -3596,6 +3605,7 @@ export class AgentServer {
         await this.relayAgentResponse(payload, undefined, turnTraceId);
       }
 
+      await this.settleClaudeRejectionReport();
       await this.finalizeRunTelemetry(payload);
     } catch (error) {
       this.logger.error(`Failed to send ${logLabel.toLowerCase()}`, error);
