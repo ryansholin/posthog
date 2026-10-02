@@ -2749,8 +2749,8 @@ export class AgentServer {
   }
 
   private async runOwnedTurn<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.activeOwnedTurnCount === 0) this.claudeTokenRejected = false;
     this.activeOwnedTurnCount += 1;
-    this.claudeTokenRejected = false;
     try {
       return await operation();
     } finally {
