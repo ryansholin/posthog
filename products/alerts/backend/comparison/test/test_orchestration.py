@@ -47,15 +47,18 @@ class _Correspondence:
     platform_policy = LOGS_ALERT_POLICY
     intentional_divergences: tuple[IntentionalDivergence, ...] = ()
 
-    def __init__(self, states: dict[CheckRef, str] | None = None) -> None:
-        self._states = states or {}
+    def __init__(
+        self,
+        states: dict[CheckRef, str] | None = None,
+        *,
+        verdicts: dict[CheckRef, SourceVerdict] | None = None,
+    ) -> None:
+        self._verdicts = verdicts or {
+            ref: SourceVerdict(coverage=SourceCoverage.EVALUATED, state=state) for ref, state in (states or {}).items()
+        }
 
     def verdicts_for(self, checks: Sequence[PlatformCheck]) -> Mapping[CheckRef, SourceVerdict]:
-        return {
-            check.ref: SourceVerdict(coverage=SourceCoverage.EVALUATED, state=self._states[check.ref])
-            for check in checks
-            if check.ref in self._states
-        }
+        return {check.ref: self._verdicts[check.ref] for check in checks if check.ref in self._verdicts}
 
 
 class TestRunComparison(TestCase):
@@ -107,6 +110,28 @@ class TestRunComparison(TestCase):
 
         assert run.checks == 1
         assert run.teams_read == 1
+
+    def test_a_real_divergence_records_how_long_the_source_took_to_reach_the_same_verdict(self) -> None:
+        # The number a first run exists to produce: a REAL the source caught up to four minutes
+        # later is two cadences out of phase, and one it never caught up to is a disagreement.
+        lagging, disagreeing = _check("firing"), _check("firing")
+        verdicts = {
+            lagging.ref: SourceVerdict(
+                coverage=SourceCoverage.EVALUATED,
+                state="not_firing",
+                observed_at=SINCE + timedelta(minutes=4),
+                next_state="firing",
+            ),
+            disagreeing.ref: SourceVerdict(coverage=SourceCoverage.EVALUATED, state="not_firing"),
+        }
+
+        with patch(READER, autospec=True, return_value=[lagging, disagreeing]):
+            run = run_comparison(
+                correspondence=_Correspondence(verdicts=verdicts), team_ids=[1], since=SINCE, until=UNTIL
+            )
+
+        assert run.by_divergence == {"real": 2}
+        assert run.real_caught_up_within == {"5m": 1, "never": 1}
 
     def test_the_rate_measures_agreement_rather_than_how_much_the_source_could_answer(self) -> None:
         # Counting UNCOMPARABLE against agreement would make the headline number track backfill

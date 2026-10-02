@@ -19,13 +19,21 @@ Both reads are read-only, so this cannot change what either stack does.
         since=until - timedelta(hours=24),
         until=until,
     )
-    print(run.checks, run.agreement_rate, run.by_agreement, run.by_coverage, run.by_divergence)
+    print(run.checks, run.agreement_rate, run.by_agreement, run.by_coverage)
+    print(run.by_divergence, run.real_caught_up_within)
 
-Read the three breakdowns together or the headline misleads. `by_coverage` says how much of the
-window the source could answer for: a large `unknown` share means the backfill is incomplete, not
-that the stacks disagree. `by_divergence` splits the disagreements, and `real` is the only class
-worth chasing, with the caveat below. `run.divergences` holds up to `MAX_SAMPLED_DIVERGENCES`
-of them, each naming its alert and both states, which is where to start reading.
+Read the breakdowns together or the headline misleads. `by_coverage` says how much of the window
+the source could answer for: a large `unknown` share means the backfill is incomplete, not that
+the stacks disagree. `by_divergence` splits the disagreements.
+
+Then read `real_caught_up_within`, which is the one a first run exists to produce. It takes every
+`REAL` divergence and asks how long after that check the source reached the platform's verdict. A
+`real` count sitting in the `60s` and `5m` buckets is two cadences out of phase; the `never` bucket
+is where the two stacks actually disagreed. Compare the buckets against the source's own check
+interval: for logs that is `check_interval_minutes` on the configuration, commonly 5.
+
+`run.divergences` holds up to `MAX_SAMPLED_DIVERGENCES` of them, each naming its alert and both
+states, which is where to start reading individual cases.
 
 Widen the window past 90 days and the platform's rows have expired; `ComparisonWindowTooLarge`
 means narrow it rather than retry.
@@ -83,13 +91,20 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import field
 from datetime import datetime
+from typing import Final
 
 import structlog
 
 from posthog.dataclasses import frozen
 
-from products.alerts.backend.comparison.contracts import CheckRef, SourceCorrespondence, SourceCoverage, SourceVerdict
-from products.alerts.backend.comparison.divergence import Agreement, Comparison, compare
+from products.alerts.backend.comparison.contracts import (
+    CheckRef,
+    PlatformCheck,
+    SourceCorrespondence,
+    SourceCoverage,
+    SourceVerdict,
+)
+from products.alerts.backend.comparison.divergence import Agreement, Comparison, DivergenceClass, compare
 from products.alerts.backend.comparison.platform_history import ComparisonWindowTooLarge, read_platform_checks
 from products.alerts.backend.facade.contracts import SourceKind
 
@@ -98,6 +113,19 @@ logger = structlog.get_logger(__name__)
 # A run reports a rate and a sample, not every row. Past this the sample stops growing and the
 # counts carry on, because the counts are what the rate is built from.
 MAX_SAMPLED_DIVERGENCES = 200
+
+# How long after a platform check the source reached the same verdict. A real disagreement that
+# the source caught up to within a check interval or two is two cadences out of phase, not a
+# disagreement. The buckets are wide and in seconds so they stay source-agnostic: read them
+# against the cadence of whichever source was swept.
+_CAUGHT_UP_BUCKETS: Final[tuple[tuple[str, float], ...]] = (
+    ("60s", 60),
+    ("5m", 300),
+    ("15m", 900),
+    ("1h", 3600),
+)
+_NEVER_CAUGHT_UP = "never"
+_CAUGHT_UP_LATER = "beyond_1h"
 
 
 @frozen
@@ -108,6 +136,12 @@ class ComparisonRun:
     is the output the exercise exists for. `by_coverage` says how much of the window the source
     could answer for at all, which measures how complete the backfill is as much as it measures
     agreement. `teams_unread` says where the sweep saw nothing, which is neither.
+
+    `real_caught_up_within` is what makes a first run worth reading. For every `REAL` divergence it
+    asks whether the source went on to reach the platform's verdict, and how long after. A run
+    whose `real` sits mostly in the short buckets is measuring phase skew rather than disagreement;
+    `never` is the share where the source went somewhere else or never moved, which is the part
+    worth chasing.
     """
 
     source: SourceKind
@@ -118,6 +152,7 @@ class ComparisonRun:
     by_agreement: dict[str, int] = field(default_factory=dict)
     by_divergence: dict[str, int] = field(default_factory=dict)
     by_coverage: dict[str, int] = field(default_factory=dict)
+    real_caught_up_within: dict[str, int] = field(default_factory=dict)
     teams_unread: dict[int, str] = field(default_factory=dict)
     divergences: tuple[Comparison, ...] = ()
 
@@ -153,6 +188,7 @@ def run_comparison(
     agreements: Counter[str] = Counter()
     divergence_classes: Counter[str] = Counter()
     coverages: Counter[str] = Counter()
+    caught_up: Counter[str] = Counter()
     unread: dict[int, str] = {}
     sampled: list[Comparison] = []
     checks = 0
@@ -175,12 +211,15 @@ def run_comparison(
 
         verdicts = correspondence.verdicts_for(platform_checks)
         for check in platform_checks:
-            comparison = compare(check, _verdict_for(verdicts, check.ref), correspondence=correspondence)
+            verdict = _verdict_for(verdicts, check.ref)
+            comparison = compare(check, verdict, correspondence=correspondence)
             checks += 1
             agreements[comparison.agreement.value] += 1
             coverages[comparison.coverage.value] += 1
             if comparison.divergence is not None:
                 divergence_classes[comparison.divergence.value] += 1
+                if comparison.divergence is DivergenceClass.REAL:
+                    caught_up[_caught_up_bucket(check, verdict)] += 1
                 if len(sampled) < MAX_SAMPLED_DIVERGENCES:
                     sampled.append(comparison)
 
@@ -193,6 +232,7 @@ def run_comparison(
         by_agreement=dict(agreements),
         by_divergence=dict(divergence_classes),
         by_coverage=dict(coverages),
+        real_caught_up_within=dict(caught_up),
         teams_unread=unread,
         divergences=tuple(sampled),
     )
@@ -207,3 +247,15 @@ def _verdict_for(verdicts: Mapping[CheckRef, SourceVerdict], ref: CheckRef) -> S
     return verdicts.get(ref) or SourceVerdict(
         coverage=SourceCoverage.UNKNOWN, state=None, detail="the source returned no verdict for this check"
     )
+
+
+def _caught_up_bucket(check: PlatformCheck, verdict: SourceVerdict) -> str:
+    """How long after this check the source reached the platform's verdict.
+
+    A source that never moved again, or moved somewhere else, never caught up: that is a
+    disagreement rather than a lag.
+    """
+    if verdict.observed_at is None or verdict.next_state != check.state:
+        return _NEVER_CAUGHT_UP
+    lag = (verdict.observed_at - check.occurred_at).total_seconds()
+    return next((label for label, bound in _CAUGHT_UP_BUCKETS if lag <= bound), _CAUGHT_UP_LATER)
