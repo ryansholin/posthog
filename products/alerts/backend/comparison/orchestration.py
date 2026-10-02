@@ -32,6 +32,10 @@ Then read `real_caught_up_within`, which is the one a first run exists to produc
 is where the two stacks actually disagreed. Compare the buckets against the source's own check
 interval: for logs that is `check_interval_minutes` on the configuration, commonly 5.
 
+`pending` is the window's own edge: checks too recent for the source to have had its next check
+yet. A large `pending` share means the window is too short or ends too close to now, not that
+anything disagrees. Widen it, or pass a `settle_for` matching the source's cadence.
+
 `run.divergences` holds up to `MAX_SAMPLED_DIVERGENCES` of them, each naming its alert and both
 states, which is where to start reading individual cases.
 
@@ -90,7 +94,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Final
 
 import structlog
@@ -126,6 +130,11 @@ _CAUGHT_UP_BUCKETS: Final[tuple[tuple[str, float], ...]] = (
 )
 _NEVER_CAUGHT_UP = "never"
 _CAUGHT_UP_LATER = "beyond_1h"
+_PENDING = "pending"
+
+# How long a check needs to sit before "the source never caught up" means anything. Three times
+# the five-minute cadence logs runs at; pass a source's own interval when it differs.
+DEFAULT_SETTLE_FOR = timedelta(minutes=15)
 
 
 @frozen
@@ -139,9 +148,9 @@ class ComparisonRun:
 
     `real_caught_up_within` is what makes a first run worth reading. For every `REAL` divergence it
     asks whether the source went on to reach the platform's verdict, and how long after. A run
-    whose `real` sits mostly in the short buckets is measuring phase skew rather than disagreement;
-    `never` is the share where the source went somewhere else or never moved, which is the part
-    worth chasing.
+    whose `real` sits mostly in the short buckets is measuring phase skew rather than disagreement.
+    `never` is the share worth chasing. `pending` is neither: those checks are too recent for the
+    source to have answered them, and a shorter window makes that share larger.
     """
 
     source: SourceKind
@@ -176,6 +185,7 @@ def run_comparison(
     team_ids: Sequence[int],
     since: datetime,
     until: datetime,
+    settle_for: timedelta = DEFAULT_SETTLE_FOR,
 ) -> ComparisonRun:
     """Every platform check in the window, set against what the source held at the same moment.
 
@@ -219,7 +229,7 @@ def run_comparison(
             if comparison.divergence is not None:
                 divergence_classes[comparison.divergence.value] += 1
                 if comparison.divergence is DivergenceClass.REAL:
-                    caught_up[_caught_up_bucket(check, verdict)] += 1
+                    caught_up[_caught_up_bucket(check, verdict, settles_by=until - settle_for)] += 1
                 if len(sampled) < MAX_SAMPLED_DIVERGENCES:
                     sampled.append(comparison)
 
@@ -249,13 +259,18 @@ def _verdict_for(verdicts: Mapping[CheckRef, SourceVerdict], ref: CheckRef) -> S
     )
 
 
-def _caught_up_bucket(check: PlatformCheck, verdict: SourceVerdict) -> str:
+def _caught_up_bucket(check: PlatformCheck, verdict: SourceVerdict, *, settles_by: datetime) -> str:
     """How long after this check the source reached the platform's verdict.
 
-    A source that never moved again, or moved somewhere else, never caught up: that is a
-    disagreement rather than a lag.
+    A check later than `settles_by` has not had long enough for the source to answer it, so its
+    silence is pending rather than disagreement. Without that split, every run of a window ending
+    now books its last few minutes of checks into the one bucket worth acting on.
     """
-    if verdict.observed_at is None or verdict.next_state != check.state:
+    if verdict.caught_up_at is None:
+        return _PENDING if check.occurred_at > settles_by else _NEVER_CAUGHT_UP
+    lag = (verdict.caught_up_at - check.occurred_at).total_seconds()
+    if lag < 0:
+        # Reaching the verdict before the check is not catching up to it, and counting the gap
+        # would read a disagreement as the shortest possible lag.
         return _NEVER_CAUGHT_UP
-    lag = (verdict.observed_at - check.occurred_at).total_seconds()
     return next((label for label, bound in _CAUGHT_UP_BUCKETS if lag <= bound), _CAUGHT_UP_LATER)

@@ -225,7 +225,8 @@ def _verdict_at(
     # rather than the check. None means the state still holds.
     observed_at = boundary.created_at if boundary is not None else None
     evidence_id = str(boundary.id) if boundary is not None else None
-    next_state = boundary.state_after if boundary is not None else None
+    # The first transition *into* the state this check decided, not merely the next one.
+    caught_up = next((event for event in after if event.state_after == check.state), None)
 
     def verdict(coverage: SourceCoverage, *, suppressed_by: SuppressionReason | None = None) -> SourceVerdict:
         return SourceVerdict(
@@ -233,7 +234,7 @@ def _verdict_at(
             state=state,
             suppressed_by=suppressed_by,
             observed_at=observed_at,
-            next_state=next_state,
+            caught_up_at=caught_up.created_at if caught_up is not None else None,
             evidence_id=evidence_id,
         )
 

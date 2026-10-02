@@ -114,12 +114,12 @@ class SourceVerdict:
     coverage: SourceCoverage
     state: str | None
     suppressed_by: SuppressionReason | None = None
-    # When the source left `state`, and what it moved to. Together these say whether a source that
-    # disagreed at this instant went on to reach the platform's verdict, and how long it took,
-    # which is what separates two cadences out of phase from a real disagreement. None when the
-    # source never moved again, which a comparison reads as never catching up.
+    # When the source left `state`, so a report can date the state it is reporting.
     observed_at: datetime | None = None
-    next_state: str | None = None
+    # When the source reached the state this check decided, which separates two cadences out of
+    # phase from a real disagreement. The source answers it because it holds the check, and the
+    # path there may take several transitions: not firing, errored, firing has reached firing.
+    caught_up_at: datetime | None = None
     # Addresses the source's own row, so a person reading a disagreement can open both sides.
     evidence_id: str | None = None
     detail: str = ""

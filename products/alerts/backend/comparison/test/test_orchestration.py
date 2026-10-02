@@ -114,24 +114,45 @@ class TestRunComparison(TestCase):
     def test_a_real_divergence_records_how_long_the_source_took_to_reach_the_same_verdict(self) -> None:
         # The number a first run exists to produce: a REAL the source caught up to four minutes
         # later is two cadences out of phase, and one it never caught up to is a disagreement.
-        lagging, disagreeing = _check("firing"), _check("firing")
+        lagging, disagreeing, misdated = _check("firing"), _check("firing"), _check("firing")
         verdicts = {
             lagging.ref: SourceVerdict(
                 coverage=SourceCoverage.EVALUATED,
                 state="not_firing",
-                observed_at=SINCE + timedelta(minutes=4),
-                next_state="firing",
+                caught_up_at=SINCE + timedelta(minutes=4),
             ),
             disagreeing.ref: SourceVerdict(coverage=SourceCoverage.EVALUATED, state="not_firing"),
+            # A correspondence that dated its own scan wrong, which must not read as a short lag.
+            misdated.ref: SourceVerdict(
+                coverage=SourceCoverage.EVALUATED,
+                state="not_firing",
+                caught_up_at=SINCE - timedelta(minutes=4),
+            ),
         }
 
-        with patch(READER, autospec=True, return_value=[lagging, disagreeing]):
+        with patch(READER, autospec=True, return_value=[lagging, disagreeing, misdated]):
             run = run_comparison(
                 correspondence=_Correspondence(verdicts=verdicts), team_ids=[1], since=SINCE, until=UNTIL
             )
 
-        assert run.by_divergence == {"real": 2}
-        assert run.real_caught_up_within == {"5m": 1, "never": 1}
+        assert run.by_divergence == {"real": 3}
+        assert run.real_caught_up_within == {"5m": 1, "never": 2}
+
+    def test_a_check_too_recent_to_have_settled_is_pending_rather_than_a_disagreement(self) -> None:
+        # Booking these as disagreement inflates the one bucket worth acting on.
+        recent = _check("firing")
+        verdicts = {recent.ref: SourceVerdict(coverage=SourceCoverage.EVALUATED, state="not_firing")}
+
+        with patch(READER, autospec=True, return_value=[recent]):
+            run = run_comparison(
+                correspondence=_Correspondence(verdicts=verdicts),
+                team_ids=[1],
+                since=SINCE - timedelta(hours=1),
+                until=SINCE + timedelta(minutes=1),
+                settle_for=timedelta(minutes=15),
+            )
+
+        assert run.real_caught_up_within == {"pending": 1}
 
     def test_the_rate_measures_agreement_rather_than_how_much_the_source_could_answer(self) -> None:
         # Counting UNCOMPARABLE against agreement would make the headline number track backfill
