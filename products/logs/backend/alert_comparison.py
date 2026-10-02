@@ -174,14 +174,25 @@ class LogsCorrespondence(SourceCorrespondence):
         complete = {alert_id: chain for alert_id, chain in chains.items() if alert_id not in incomplete}
         for chain in complete.values():
             chain.reverse()
-        for row in (
-            self._events(list(complete), team_ids)
-            .filter(created_at__gt=until)
-            .order_by("alert_id", "created_at")
-            .distinct("alert_id")
-        ):
+        for row in self._first_after(list(complete), team_ids, until):
             complete[row.alert_id].append(row)
+        # `enabled` is dated by the first toggle after a check, which can sit past that first row.
+        # Without it an alert disabled after the window reads as disabled throughout it, and every
+        # check in the window becomes a disagreement.
+        for row in self._first_after(list(complete), team_ids, until, kinds=_TOGGLE_KINDS):
+            chain = complete[row.alert_id]
+            if not chain or chain[-1].id != row.id:
+                chain.append(row)
         return complete
+
+    def _first_after(
+        self, alert_ids: list[UUID], team_ids: set[int], moment: datetime, *, kinds: frozenset | None = None
+    ) -> QuerySet[LogsAlertEvent]:
+        """The earliest transition each alert made after `moment`, optionally of certain kinds."""
+        rows = self._events(alert_ids, team_ids).filter(created_at__gt=moment)
+        if kinds is not None:
+            rows = rows.filter(kind__in=kinds)
+        return rows.order_by("alert_id", "created_at").distinct("alert_id")
 
     def _events(self, alert_ids: list[UUID], team_ids: set[int]) -> QuerySet[LogsAlertEvent]:
         return LogsAlertEvent.objects.filter(

@@ -206,6 +206,29 @@ class TestLogsCorrespondence(BaseTest):
 
         assert window_end_of(_evaluation_key(check, WINDOW_END)) == WINDOW_END
 
+    def test_an_alert_disabled_after_the_window_was_still_enabled_during_it(self) -> None:
+        # The read is bounded by the window, so a toggle can sit past the first transition after
+        # it. Missing it reads the whole window as disabled, and every check as a disagreement.
+        alert = self._alert(enabled=False)
+        self._event(
+            alert,
+            at=CHECKED_AT + timedelta(hours=2),
+            state_before=LogsAlertConfiguration.State.NOT_FIRING,
+            state_after=LogsAlertConfiguration.State.FIRING,
+        )
+        self._event(
+            alert,
+            at=CHECKED_AT + timedelta(hours=3),
+            kind=LogsAlertEvent.Kind.DISABLE,
+            state_before=LogsAlertConfiguration.State.FIRING,
+            state_after=LogsAlertConfiguration.State.NOT_FIRING,
+        )
+
+        verdict = self._verdict(alert)
+
+        assert verdict.coverage is SourceCoverage.EVALUATED
+        assert verdict.suppressed_by is None
+
     def test_a_check_whose_configuration_names_no_logs_alert_cannot_be_answered(self) -> None:
         orphan = replace(self._check(self._alert()), legacy_configuration_id=None)
 
